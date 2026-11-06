@@ -19,6 +19,7 @@ GENERATIONS = 50
 
 def create_network():
     """Create a fresh, reproducible Tactical WiMAX network."""
+
     return create_initial_network(
         seed=NETWORK_SEED,
         users_per_class=USERS_PER_CLASS,
@@ -28,11 +29,12 @@ def create_network():
 
 def evaluate_allocation(allocation):
     """
-    Evaluate one candidate resource allocation.
+    Evaluate one candidate allocation.
 
     A fresh network and simulation are created for each candidate.
-    The same random seeds provide consistent traffic conditions.
+    Identical seeds provide consistent traffic conditions.
     """
+
     network = create_network()
 
     engine = SimulationEngine(
@@ -46,11 +48,14 @@ def evaluate_allocation(allocation):
 
 
 def save_pareto_solutions(solutions):
-    """Save the final Pareto solutions and QoS metrics to CSV."""
+    """Save Pareto solutions and all QoS/resource metrics to CSV."""
+
     results_directory = Path("results")
     results_directory.mkdir(parents=True, exist_ok=True)
 
-    output_file = results_directory / "nsga2_pareto_solutions.csv"
+    output_file = (
+        results_directory / "nsga2_pareto_solutions.csv"
+    )
 
     fieldnames = [
         "solution_id",
@@ -59,7 +64,8 @@ def save_pareto_solutions(solutions):
         "average_delay",
         "packet_loss_ratio",
         "jain_fairness_index",
-        "resource_utilization",
+        "resource_allocation_ratio",
+        "resource_utilization_ratio",
     ]
 
     with output_file.open(
@@ -67,7 +73,12 @@ def save_pareto_solutions(solutions):
         newline="",
         encoding="utf-8",
     ) as csv_file:
-        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+
+        writer = csv.DictWriter(
+            csv_file,
+            fieldnames=fieldnames,
+        )
+
         writer.writeheader()
 
         for index, solution in enumerate(solutions, start=1):
@@ -75,12 +86,21 @@ def save_pareto_solutions(solutions):
 
             writer.writerow({
                 "solution_id": index,
-                "allocated_resources": sum(solution["allocation"]),
+                "allocated_resources": sum(
+                    solution["allocation"]
+                ),
                 "throughput": metrics["throughput"],
                 "average_delay": metrics["average_delay"],
                 "packet_loss_ratio": metrics["packet_loss_ratio"],
-                "jain_fairness_index": metrics["jain_fairness_index"],
-                "resource_utilization": metrics["resource_utilization"],
+                "jain_fairness_index": metrics[
+                    "jain_fairness_index"
+                ],
+                "resource_allocation_ratio": metrics[
+                    "resource_allocation_ratio"
+                ],
+                "resource_utilization_ratio": metrics[
+                    "resource_utilization_ratio"
+                ],
             })
 
     return output_file
@@ -88,6 +108,7 @@ def save_pareto_solutions(solutions):
 
 def display_solution(index, solution, users):
     """Print one Pareto solution and its per-user allocation."""
+
     metrics = solution["metrics"]
     allocation = solution["allocation"]
 
@@ -95,32 +116,45 @@ def display_solution(index, solution, users):
     print(f"PARETO SOLUTION {index}")
     print(f"{'=' * 58}")
 
-    print(f"Pareto rank             : {solution['rank']}")
-    print(f"Total allocated resources: {sum(allocation):.4f}")
-    print(f"Available resources     : {TOTAL_RESOURCES}")
-
-    print("\nQoS Metrics")
-    print("-" * 58)
-    print(f"Throughput              : {metrics['throughput']:.4f}")
-    print(f"Average delay           : {metrics['average_delay']:.4f}")
-    print(f"Packet loss ratio       : {metrics['packet_loss_ratio']:.4f}")
+    print(f"Pareto rank              : {solution['rank']}")
     print(
-        "Jain fairness index    : "
+        f"Total allocated resources: "
+        f"{sum(allocation):.4f}"
+    )
+    print(f"Available resources      : {TOTAL_RESOURCES}")
+
+    print("\nQoS and Resource Metrics")
+    print("-" * 58)
+
+    print(f"Throughput               : {metrics['throughput']:.4f}")
+    print(f"Average delay            : {metrics['average_delay']:.4f}")
+    print(f"Packet loss ratio        : {metrics['packet_loss_ratio']:.4f}")
+
+    print(
+        f"Jain fairness index      : "
         f"{metrics['jain_fairness_index']:.4f}"
     )
+
     print(
-        "Resource utilization   : "
-        f"{metrics['resource_utilization']:.4f}"
+        f"Resource allocation ratio: "
+        f"{metrics['resource_allocation_ratio']:.4f}"
+    )
+
+    print(
+        f"Resource utilization     : "
+        f"{metrics['resource_utilization_ratio']:.4f}"
     )
 
     print("\nPer-user Resource Allocation")
     print("-" * 58)
+
     print(
         f"{'User ID':<10}"
         f"{'Traffic Class':<20}"
         f"{'Priority':<10}"
         f"{'Allocation':<12}"
     )
+
     print("-" * 58)
 
     for user, amount in zip(users, allocation):
@@ -134,6 +168,7 @@ def display_solution(index, solution, users):
 
 def main():
     """Run NSGA-II and save its final Pareto solutions."""
+
     network = create_network()
 
     print("=" * 58)
@@ -142,7 +177,8 @@ def main():
 
     print("\nExperimental Configuration")
     print("-" * 58)
-    print(f"Traffic classes          : 5")
+
+    print("Traffic classes          : 5")
     print(f"Users per class          : {USERS_PER_CLASS}")
     print(f"Total users              : {len(network.users)}")
     print(f"Total resources          : {network.total_resources}")
@@ -154,11 +190,12 @@ def main():
 
     print("\nQoS Optimization Objectives")
     print("-" * 58)
+
     print("1. Maximize throughput")
     print("2. Minimize average delay")
     print("3. Minimize packet loss ratio")
     print("4. Maximize Jain's fairness index")
-    print("5. Maximize resource utilization")
+    print("5. Maximize actual resource utilization")
 
     optimizer = NSGA2(
         network=network,
@@ -181,24 +218,48 @@ def main():
     print("\n\n" + "=" * 58)
     print("FINAL PARETO-OPTIMAL SOLUTIONS")
     print("=" * 58)
-    print(f"Number of returned solutions: {len(pareto_solutions)}")
 
-    for index, solution in enumerate(pareto_solutions, start=1):
-        display_solution(index, solution, network.users)
+    print(
+        f"Number of returned solutions: "
+        f"{len(pareto_solutions)}"
+    )
 
-    output_file = save_pareto_solutions(pareto_solutions)
+    for index, solution in enumerate(
+        pareto_solutions,
+        start=1,
+    ):
+        display_solution(
+            index,
+            solution,
+            network.users,
+        )
+
+    output_file = save_pareto_solutions(
+        pareto_solutions
+    )
 
     print("\n\n" + "=" * 58)
     print("EXPERIMENT SUMMARY")
     print("=" * 58)
-    print(f"Generations completed : {len(optimizer.history)}")
-    print(f"Pareto solutions      : {len(pareto_solutions)}")
+
+    print(
+        f"Generations completed : {len(optimizer.history)}"
+    )
+
+    print(
+        f"Pareto solutions      : {len(pareto_solutions)}"
+    )
+
     print(f"Results saved to      : {output_file}")
 
     if optimizer.history:
         print("\nPareto Front Progress")
         print("-" * 58)
-        print(f"{'Generation':<15}{'Pareto Solutions':<20}")
+
+        print(
+            f"{'Generation':<15}"
+            f"{'Pareto Solutions':<20}"
+        )
 
         for record in optimizer.history:
             print(
@@ -207,6 +268,7 @@ def main():
             )
 
     print("\nOptimization completed.")
+
     print(
         "These are simulated results, not measurements from "
         "physical WiMAX equipment."

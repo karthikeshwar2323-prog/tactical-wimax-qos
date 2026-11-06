@@ -1,0 +1,2 @@
+scheduler,network_seed,traffic_seed,simulation_steps,total_resources,throughput,average_delay,packet_loss_ratio,jain_fairness_index,resource_allocation_ratio,resource_utilization_ratio
+Priority-Based Scheduling,42,42,10,100,76500.0,5.858006595822646,0.0,0.5413436812017834,1.0,0.9926341163194476

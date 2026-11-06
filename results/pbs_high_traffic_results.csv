@@ -1,0 +1,2 @@
+scheduler,traffic_scenario,traffic_multiplier,network_seed,traffic_seed,simulation_steps,throughput,average_delay,packet_loss_ratio,jain_fairness_index,resource_allocation_ratio,resource_utilization_ratio
+PBS,High Traffic,2.0,42,42,10,76500.0,6.1630408797513745,0.13511837072263,0.5413436812017834,1.0,0.9926341163194476

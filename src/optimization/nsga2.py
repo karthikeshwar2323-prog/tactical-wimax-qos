@@ -7,16 +7,13 @@ class NSGA2:
     """
     NSGA-II multi-objective evolutionary optimizer.
 
-    The optimizer minimizes all objectives internally. The objective
-    evaluator must return a dictionary containing:
-        throughput
-        average_delay
-        packet_loss_ratio
-        jain_fairness_index
-        resource_utilization
+    The optimizer minimizes all objectives internally.
 
-    Throughput, fairness, and utilization are maximized.
-    Delay and packet loss are minimized.
+    Throughput, fairness, and actual resource utilization
+    are maximized. Delay and packet loss are minimized.
+
+    Resource allocation ratio is retained as a reported metric,
+    but is not used as the fifth optimization objective.
     """
 
     OBJECTIVE_NAMES = (
@@ -24,7 +21,7 @@ class NSGA2:
         "average_delay",
         "packet_loss_ratio",
         "jain_fairness_index",
-        "resource_utilization",
+        "resource_utilization_ratio",
     )
 
     def __init__(
@@ -66,8 +63,10 @@ class NSGA2:
             raise ValueError("Total resources must be positive.")
 
         self.lower_bounds = [0.0 for _ in self.users]
+
         self.upper_bounds = [
-            float(user.required_bandwidth) for user in self.users
+            float(user.required_bandwidth)
+            for user in self.users
         ]
 
         if any(bound < 0 for bound in self.upper_bounds):
@@ -87,13 +86,13 @@ class NSGA2:
         self.history = []
 
     def _repair(self, allocation):
-        """
-        Enforce gene bounds and the total resource budget.
+        """Enforce gene bounds and the total resource budget."""
 
-        Allocations are nonnegative and cannot exceed each user's
-        required bandwidth. If their sum exceeds the budget, all
-        allocations are proportionally scaled down.
-        """
+        if len(allocation) != len(self.users):
+            raise ValueError(
+                f"Allocation must contain {len(self.users)} values."
+            )
+
         repaired = [
             min(max(float(value), low), high)
             for value, low, high in zip(
@@ -107,12 +106,15 @@ class NSGA2:
 
         if total > self.total_resources:
             scale = self.total_resources / total
-            repaired = [value * scale for value in repaired]
+            repaired = [
+                value * scale for value in repaired
+            ]
 
         return repaired
 
     def _random_individual(self):
-        """Generate a feasible random resource allocation."""
+        """Generate a feasible random allocation."""
+
         allocation = [
             self.rng.uniform(low, high)
             for low, high in zip(
@@ -126,6 +128,7 @@ class NSGA2:
     @staticmethod
     def _to_minimization_objectives(metrics):
         """Convert all five objectives to minimization form."""
+
         missing = [
             name
             for name in NSGA2.OBJECTIVE_NAMES
@@ -142,7 +145,9 @@ class NSGA2:
         delay = float(metrics["average_delay"])
         loss = float(metrics["packet_loss_ratio"])
         fairness = float(metrics["jain_fairness_index"])
-        utilization = float(metrics["resource_utilization"])
+        utilization = float(
+            metrics["resource_utilization_ratio"]
+        )
 
         values = [
             throughput,
@@ -177,7 +182,7 @@ class NSGA2:
 
         if not 0 <= utilization <= 1:
             raise ValueError(
-                "Resource utilization must be between 0 and 1."
+                "Resource utilization ratio must be between 0 and 1."
             )
 
         return (
@@ -189,7 +194,8 @@ class NSGA2:
         )
 
     def _evaluate(self, individual):
-        """Evaluate an allocation using the supplied network simulator."""
+        """Evaluate an allocation using the supplied simulator."""
+
         metrics = self.objective_evaluator(individual[:])
 
         if not isinstance(metrics, dict):
@@ -211,6 +217,7 @@ class NSGA2:
     @staticmethod
     def _dominates(first, second):
         """Return True if first Pareto-dominates second."""
+
         first_values = first["objectives"]
         second_values = second["objectives"]
 
@@ -226,6 +233,7 @@ class NSGA2:
 
     def _fast_non_dominated_sort(self, population):
         """Partition a population into Pareto fronts."""
+
         domination_counts = [0] * len(population)
         dominated_solutions = [[] for _ in population]
         fronts = [[]]
@@ -237,6 +245,7 @@ class NSGA2:
 
                 if self._dominates(first, second):
                     dominated_solutions[i].append(j)
+
                 elif self._dominates(second, first):
                     domination_counts[i] += 1
 
@@ -269,6 +278,7 @@ class NSGA2:
 
     def _calculate_crowding_distance(self, front):
         """Estimate solution isolation within a Pareto front."""
+
         for individual in front:
             individual["crowding_distance"] = 0.0
 
@@ -285,14 +295,14 @@ class NSGA2:
                 key=lambda item: item["objectives"][objective_index],
             )
 
-            sorted_front[0]["crowding_distance"] = inf
-            sorted_front[-1]["crowding_distance"] = inf
-
             minimum = sorted_front[0]["objectives"][objective_index]
             maximum = sorted_front[-1]["objectives"][objective_index]
 
             if maximum == minimum:
                 continue
+
+            sorted_front[0]["crowding_distance"] = inf
+            sorted_front[-1]["crowding_distance"] = inf
 
             for index in range(1, len(sorted_front) - 1):
                 individual = sorted_front[index]
@@ -314,6 +324,7 @@ class NSGA2:
 
     def _rank_population(self, population):
         """Assign Pareto ranks and crowding distances."""
+
         fronts = self._fast_non_dominated_sort(population)
 
         for front in fronts:
@@ -323,6 +334,7 @@ class NSGA2:
 
     def _tournament_selection(self, population):
         """Select a parent using rank and crowding distance."""
+
         first = self.rng.choice(population)
         second = self.rng.choice(population)
 
@@ -341,12 +353,8 @@ class NSGA2:
         return self.rng.choice([first, second])
 
     def _crossover(self, first, second):
-        """
-        Perform blend crossover on two real-valued allocations.
+        """Perform blend crossover on real-valued allocations."""
 
-        Both offspring are repaired to respect allocation bounds
-        and the total resource budget.
-        """
         child_one = []
         child_two = []
 
@@ -358,11 +366,13 @@ class NSGA2:
                 alpha = self.rng.random()
 
                 new_one = (
-                    alpha * value_one + (1 - alpha) * value_two
+                    alpha * value_one
+                    + (1 - alpha) * value_two
                 )
 
                 new_two = (
-                    alpha * value_two + (1 - alpha) * value_one
+                    alpha * value_two
+                    + (1 - alpha) * value_one
                 )
             else:
                 new_one = value_one
@@ -371,10 +381,14 @@ class NSGA2:
             child_one.append(new_one)
             child_two.append(new_two)
 
-        return self._repair(child_one), self._repair(child_two)
+        return (
+            self._repair(child_one),
+            self._repair(child_two),
+        )
 
     def _mutate(self, allocation):
         """Apply bounded Gaussian mutation to allocation genes."""
+
         mutated = allocation[:]
 
         for index, value in enumerate(mutated):
@@ -399,6 +413,7 @@ class NSGA2:
 
     def _make_offspring(self, population):
         """Create and evaluate the next offspring population."""
+
         offspring = []
 
         while len(offspring) < self.population_size:
@@ -422,6 +437,7 @@ class NSGA2:
 
     def _environmental_selection(self, combined_population):
         """Select the next generation using NSGA-II ranking."""
+
         fronts = self._rank_population(combined_population)
         selected = []
 
@@ -433,23 +449,42 @@ class NSGA2:
 
             if len(front) <= remaining:
                 selected.extend(front)
+
             else:
                 front.sort(
                     key=lambda item: item["crowding_distance"],
                     reverse=True,
                 )
+
                 selected.extend(front[:remaining])
                 break
 
         return selected
 
-    def optimize(self):
-        """
-        Run NSGA-II and return the final non-dominated solutions.
+    @staticmethod
+    def _deduplicate_front(front, precision=10):
+        """Remove solutions with equivalent objective values."""
 
-        The objective evaluator must independently evaluate each
-        candidate allocation using a consistent simulation scenario.
-        """
+        unique_solutions = []
+        seen_objectives = set()
+
+        for individual in front:
+            objective_key = tuple(
+                round(value, precision)
+                for value in individual["objectives"]
+            )
+
+            if objective_key in seen_objectives:
+                continue
+
+            seen_objectives.add(objective_key)
+            unique_solutions.append(individual)
+
+        return unique_solutions
+
+    def optimize(self):
+        """Run NSGA-II and return the final non-dominated solutions."""
+
         self.history = []
 
         population = [
@@ -484,6 +519,21 @@ class NSGA2:
         final_fronts = self._rank_population(population)
         final_front = final_fronts[0] if final_fronts else []
 
+        unique_front = self._deduplicate_front(final_front)
+
+        print(
+            f"\nFinal Pareto front: {len(final_front)} solutions"
+        )
+
+        print(
+            f"Unique objective combinations: {len(unique_front)}"
+        )
+
+        print(
+            f"Duplicate objective combinations removed: "
+            f"{len(final_front) - len(unique_front)}"
+        )
+
         return [
             {
                 "allocation": item["allocation"][:],
@@ -491,5 +541,5 @@ class NSGA2:
                 "rank": item["rank"],
                 "crowding_distance": item["crowding_distance"],
             }
-            for item in final_front
+            for item in unique_front
         ]
